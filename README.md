@@ -14,8 +14,8 @@ There is internal cache for already checked IP addresses.
        
    2. Build Nginx as usual with `make`.
    
-   3. Configure the module. There's only one directive `hello_world`
-      that is supported in the **location** context only.
+   3. Configure the module. **server** and **location** context are supported. 
+      It's better to apply on location where the application is working, like .php or uwsgi_pass.
       
       Example:
           
@@ -23,7 +23,8 @@ There is internal cache for already checked IP addresses.
              
             blacklist_lookup on;
             blacklist_lookup_honeyPotAccessKey "KeyString"; # get this from your Project Honey Pot account (free to register) at http://www.projecthoneypot.org/httpbl_configure.php
-          
+            blacklist_lookup_verbose on;                    # optional
+            blacklist_lookup_bounce "en";                   # optional, "en" - default, "ru" or "en" are supported
           }
 	
 	4. 
