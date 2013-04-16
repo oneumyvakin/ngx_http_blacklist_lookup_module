@@ -34,3 +34,7 @@ There is internal cache for already checked IP addresses.
 	1. Replace internal resolver with ngx_resolver
  
 	2. Make using uceprotect.net and blocklist.de are optional
+
+## ISSUES
+
+	1. Performance degradation is highly possible.
