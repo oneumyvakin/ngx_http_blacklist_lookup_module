@@ -22,7 +22,7 @@ There is internal cache for already checked IP addresses.
           location = /test {
              
             blacklist_lookup on;
-            blacklist_lookup_honeyPotAccessKey "KeyString"; # get this from your Project Honey Pot account (free to register) at http://www.projecthoneypot.org/httpbl_configure.php
+            blacklist_lookup_honeyPotAccessKey "KeyString"; # optional, get this from your Project Honey Pot account (free to register) at http://www.projecthoneypot.org/httpbl_configure.php
             blacklist_lookup_verbose on;                    # optional
             blacklist_lookup_bounce "en";                   # optional, "en" - default, "ru" or "en" are supported
           }
