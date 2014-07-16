@@ -26,16 +26,20 @@
 * THE SOFTWARE.
 *
 * @section TODO
-* - replace internal resolver with ngx_resolver.
-* - make uceprotect.net and blocklist.de optional
+* - replace internal resolver with ngx_resolver		- DONE
+* - make uceprotect.net and blocklist.de optional	- DONE
 */
-#include <ngx_config.h>
+#include <../src/core/ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
 
 typedef struct {
     ngx_flag_t      enable;
     ngx_flag_t      verbose;
+	ngx_uint_t		hits;
+	ngx_flag_t      projecthoneypot_org;
+	ngx_flag_t      blocklist_de;
+	ngx_flag_t      uceprotect_net;
     ngx_str_t       honeyPotAccessKey;
     ngx_str_t       lang;
 } ngx_http_blacklist_lookup_loc_conf_t;
@@ -43,7 +47,7 @@ typedef struct {
 typedef struct {
     ngx_str_node_t	sn;
 	time_t		    expire;
-	int				result;
+	ngx_uint_t		result;
 } ngx_http_blacklist_lookup_value_node_t;
 
 typedef struct {
@@ -64,37 +68,71 @@ static ngx_shm_zone_t * ngx_http_blacklist_lookup_shm_zone;
 static ngx_rbtree_t * ngx_http_blacklist_lookup_rbtree;
 
 /**
-* This module provided directives: blacklist_lookup, blacklist_lookup_honeyPotAccessKey.
-*
+* This module provided directives: 	blacklist_lookup, 
+*									blacklist_lookup_verbose,
+*									blacklist_lookup_hits,
+*									blacklist_lookup_bounce,
+*									blacklist_lookup_blocklist_de,
+*									blacklist_lookup_uceprotect_net,
+*									blacklist_lookup_projecthoneypot_org,
+*									blacklist_lookup_honeyPotAccessKey
 */
 static ngx_command_t ngx_http_blacklist_lookup_commands[] = {
 
-    { ngx_string("blacklist_lookup"), /* directive */
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes"*/
-      ngx_conf_set_flag_slot, /* configuration setup function */
+    { ngx_string("blacklist_lookup"), /* directive name */
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes" as argument */
+      ngx_conf_set_flag_slot, /* describes the data type of argument */
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_blacklist_lookup_loc_conf_t, enable),
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, enable), /* destination where to store recieved argument */
       NULL},
 
-    { ngx_string("blacklist_lookup_verbose"), /* directive */
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes"*/
-      ngx_conf_set_flag_slot, /* configuration setup function */
+    { ngx_string("blacklist_lookup_verbose"), /* directive name */
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes" as argument*/
+      ngx_conf_set_flag_slot, /* describes the data type of argument */
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_blacklist_lookup_loc_conf_t, verbose),
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, verbose), /* destination where to store recieved argument */
       NULL},
 
-    { ngx_string("blacklist_lookup_honeyPotAccessKey"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
+    { ngx_string("blacklist_lookup_hits"), /* directive name */
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1, /* location context and takes one argument*/
+      ngx_conf_set_num_slot, /* describes the data type of argument */
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_blacklist_lookup_loc_conf_t, honeyPotAccessKey),
-      NULL },
-
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, hits), /* destination where to store recieved argument */
+      NULL},
+	  
     { ngx_string("blacklist_lookup_bounce"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1, /* location context and takes one argument */
+      ngx_conf_set_str_slot, /* describes the data type of argument */
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_blacklist_lookup_loc_conf_t, lang),
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, lang), /* destination where to store recieved argument */
+      NULL },
+	  
+    { ngx_string("blacklist_lookup_blocklist_de"), /* directive name */
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes" as argument*/
+      ngx_conf_set_flag_slot, /* describes the data type of argument */
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, blocklist_de), /* destination where to store recieved argument */
+      NULL},
+	  
+    { ngx_string("blacklist_lookup_uceprotect_net"), /* directive name */
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes" as argument*/
+      ngx_conf_set_flag_slot, /* describes the data type of argument */
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, uceprotect_net), /* destination where to store recieved argument */
+      NULL},
+	  
+    { ngx_string("blacklist_lookup_projecthoneypot_org"), /* directive name */
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG, /* location context and takes "no" or "yes" as argument*/
+      ngx_conf_set_flag_slot, /* describes the data type of argument */
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, projecthoneypot_org), /* destination where to store recieved argument */
+      NULL},
+	  
+    { ngx_string("blacklist_lookup_honeyPotAccessKey"),
+      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1, /* location context and takes one argument */
+      ngx_conf_set_str_slot, /* describes the data type of argument */
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_blacklist_lookup_loc_conf_t, honeyPotAccessKey), /* destination where to store recieved argument */
       NULL },
 
     ngx_null_command /* command termination */
@@ -134,31 +172,31 @@ ngx_module_t ngx_http_blacklist_lookup_module = {
 /* String manipulation function. */
 static int explode(char ***arr_ptr, char *str, char delimiter)
 {
-  char *src = str, *end, *dst;
-  char **arr;
-  int size = 1, i;
+	char *src = str, *end, *dst;
+	char **arr;
+	int size = 1, i;
 
-  while ((end = strchr(src, delimiter)) != NULL)  {
-      ++size;
-      src = end + 1;
-  }
+	while ((end = strchr(src, delimiter)) != NULL)  {
+		++size;
+		src = end + 1;
+	}
 
-  arr = malloc(size * sizeof(char *) + (strlen(str) + 1) * sizeof(char));
+	arr = malloc(size * sizeof(char *) + (strlen(str) + 1) * sizeof(char));
 
-  src = str;
-  dst = (char *) arr + size * sizeof(char *);
-  for (i = 0; i < size; ++i) {
-    if ((end = strchr(src, delimiter)) == NULL)
-		end = src + strlen(src);
-    arr[i] = dst;
-    strncpy(dst, src, end - src);
-    dst[end - src] = '\0';
-    dst += end - src + 1;
-    src = end + 1;
-  }
-  *arr_ptr = arr;
+	src = str;
+	dst = (char *) arr + size * sizeof(char *);
+	for (i = 0; i < size; ++i) {
+		if ((end = strchr(src, delimiter)) == NULL)
+			end = src + strlen(src);
+    	arr[i] = dst;
+		strncpy(dst, src, end - src);
+		dst[end - src] = '\0';
+		dst += end - src + 1;
+		src = end + 1;
+	}
+	*arr_ptr = arr;
 
-  return size;
+	return size;
 }
 
 /* Get reversed IP. */
@@ -453,7 +491,7 @@ ngx_http_blacklist_lookup_handler(ngx_http_request_t *r)
 			expired = 1;
 		}
 		
-		if (found->result > 1) {
+		if (found->result >= alcf->hits) {
 			bad = 1;
 		}
 
@@ -482,12 +520,17 @@ ngx_http_blacklist_lookup_handler(ngx_http_request_t *r)
 
     char reversedIp[INET6_ADDRSTRLEN] = "";
     reverseIpv4(ip_as_char, reversedIp);
-
-    int total = uceprotect_net(r, ip_as_char, reversedIp) +
-                blocklist_de(r, ip_as_char, reversedIp) +
-                projecthoneypot_org(r, ip_as_char, reversedIp, honeyPotAccessKey);
-
-
+	
+	int total = 0;
+	if (alcf->uceprotect_net) {
+		total += uceprotect_net(r, ip_as_char, reversedIp);
+	}
+	if (alcf->blocklist_de) {
+		total += blocklist_de(r, ip_as_char, reversedIp);
+	}
+	if (alcf->projecthoneypot_org) {
+		total += projecthoneypot_org(r, ip_as_char, reversedIp, honeyPotAccessKey);
+	}
 
     ngx_shmtx_lock(&shpool->mutex);
 	/* delete all expired nodes to avoid ngx_slab_alloc() "no memory" issue */
@@ -565,6 +608,10 @@ ngx_http_blacklist_lookup_create_loc_conf(ngx_conf_t *cf)
     }
     conf->enable = NGX_CONF_UNSET;
     conf->verbose = NGX_CONF_UNSET;
+	conf->hits = NGX_CONF_UNSET_UINT;
+    conf->projecthoneypot_org = NGX_CONF_UNSET;
+	conf->blocklist_de = NGX_CONF_UNSET;
+	conf->uceprotect_net = NGX_CONF_UNSET;
     return conf;
 }
 
@@ -575,6 +622,10 @@ ngx_http_blacklist_lookup_init_loc_conf(ngx_conf_t *cf, void *parent, void *chil
     ngx_http_blacklist_lookup_loc_conf_t  *conf = child;
     ngx_conf_merge_value(conf->enable, prev->enable, 0);
     ngx_conf_merge_value(conf->verbose, prev->verbose, 0);
+	ngx_conf_merge_value(conf->projecthoneypot_org, prev->projecthoneypot_org, 0);
+	ngx_conf_merge_value(conf->blocklist_de, prev->blocklist_de, 0);
+	ngx_conf_merge_value(conf->uceprotect_net, prev->uceprotect_net, 0);
+	ngx_conf_merge_uint_value(conf->hits, prev->hits, 1);
     ngx_conf_merge_str_value(conf->honeyPotAccessKey, prev->honeyPotAccessKey, "nokey");
     ngx_conf_merge_str_value(conf->lang, prev->lang, "en");
 
